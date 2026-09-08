@@ -1,0 +1,84 @@
+# Ворота этапа 02, шаг 5 (наряд test-author): ruff, pytest, сборка пакета,
+# `garant --version`, дымовой тест MCP по stdio.
+#
+# Почему обе ОС: демон и клиент написаны так, чтобы работать на всех трёх —
+# см. решение 18 («пульт удалён, ядро на Python работает на всех»). Здесь
+# без macOS (её нет бесплатно в GitHub Actions с той же щедростью раннеров;
+# добавление — отдельное решение, не этого наряда).
+#
+# Почему дымовой тест важен именно здесь: в среде разработки, где писались
+# эти тесты, стоит mcp 2.x, и `server.py` там не импортируется вовсе — два
+# пропуска в локальном прогоне `pytest tests/` ровно об этом. В CI по пину
+# `mcp>=1.2,<2` из pyproject.toml встанет 1.x, и это ЕДИНСТВЕННОЕ место, где
+# сервер проверяется по-настоящему, а не пропускается с объяснением.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Playwright — зависимость пакета (dependencies в pyproject.toml), но
+      # тесты клиента ходят через фейковый Transport (решение 17) и браузер
+      # не запускают. Библиотеку ставим, чтобы `pip install .` и импорт
+      # модулей не падали; сами браузеры Playwright (`playwright install`)
+      # НЕ ставим — ни один тест и ни дымовой прогон их не касается, а
+      # загрузка браузеров — минуты, которые здесь нечем окупить.
+      - name: Установить пакет с dev-зависимостями
+        run: python -m pip install -e ".[dev]"
+
+      - name: ruff
+        run: python -m ruff check src tests
+
+      - name: pytest
+        run: python -m pytest tests/ -q
+
+      - name: Сборка пакета (wheel + sdist)
+        run: |
+          python -m pip install build
+          python -m build
+
+      - name: garant --version
+        run: garant --version
+
+      # Дымовой тест: поднять garant-mcp по stdio настоящим MCP-клиентом
+      # (из установленного пакета mcp) и убедиться, что список инструментов —
+      # ровно восемь. Работа самих инструментов (сеть к «Гаранту») здесь не
+      # проверяется — только то, что протокол MCP поднимается и отдаёт
+      # ожидаемую форму. Живая проверка самих инструментов вне зоны этого
+      # наряда: сети к «Гаранту» в среде разработки нет (CLAUDE.md, «Граница
+      # проверяемого»), и в CI-раннере её тоже нет.
+      - name: Дымовой тест MCP по stdio (восемь инструментов)
+        shell: python
+        run: |
+          import asyncio
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+
+          async def main():
+              params = StdioServerParameters(command="garant-mcp", args=[])
+              async with stdio_client(params) as (read, write):
+                  async with ClientSession(read, write) as session:
+                      await session.initialize()
+                      ответ = await session.list_tools()
+                      имена = sorted(t.name for t in ответ.tools)
+                      assert len(имена) == 8, (
+                          "ожидалось 8 инструментов, получено {}: {}".format(
+                              len(имена), имена))
+                      print("OK, инструменты:", имена)
+
+          asyncio.run(main())

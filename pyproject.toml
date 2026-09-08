@@ -1,0 +1,58 @@
+# Бекенд — setuptools: он уже есть в любом окружении, где работает pip,
+# и не тянет за собой ни одной сборочной зависимости сверх себя.
+[build-system]
+requires = ["setuptools>=77"]  # PEP 639: поле license строкой SPDX
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "garant-mcp"
+description = "MCP-сервер над правовой базой «Гарант»: доступ даёт собственная подписка пользователя"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dynamic = ["version"]
+
+dependencies = [
+    # Верхняя граница у mcp не декоративная: в 2.x FastMCP переименован
+    # в MCPServer, а server.py написан под 1.x. С mcp 2.x импорт сервера падает
+    # на строке «from mcp.server.fastmcp import FastMCP», и выглядит это как
+    # поломка сервера, а не как несовместимость версий.
+    "mcp>=1.2,<2",
+    "playwright>=1.44",
+    # Единственный источник истины о расположении состояния (paths.py).
+    "platformdirs>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+garant = "garant_mcp.cli:main"
+garant-mcp = "garant_mcp.server:main"
+garant-daemon = "garant_mcp.daemon:main"
+
+[tool.setuptools.dynamic]
+# Версия объявлена ровно в одном месте — garant_mcp/__init__.py.
+version = { attr = "garant_mcp.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Без endpoints.json клиент не запускается вовсе: в нём вся карта эндпоинтов.
+garant_mcp = ["endpoints.json"]
+
+# Набор правил назван явно, потому что CI ставит `.[dev]` — то есть ruff
+# СВЕЖИЙ, какой выйдет ко дню сборки. Без выбора он включает всё, что успело
+# появиться в новой версии (на 0.16 это четыре с лишним сотни правил, из них
+# сотни — вкусовые: f-строки вместо `format`, порядок импортов), и очередной
+# релиз линтера красит сборку, в которой ни строки не менялось. Выбран
+# классический набор — ошибки, а не вкусы: под него код и писался.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+# F811 в tests — не переопределение, а идиома pytest: фикстура импортируется
+# из общего модуля и тем же именем принимается параметром теста. Правило
+# видит второе связывание имени и не видит, что вызов делает pytest.
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["F811"]

@@ -1,0 +1,22 @@
+{
+ "_происхождение": "Синтетика по форме endpoints.json (секция practice: kind_step, date_step, page_step). Каждый шаг возвращает СВОЙ doclistId — так устроен реальный трафик по CLAUDE.md, ограничение 9; сами значения doclistId и тексты актов выдуманы.",
+ "kind": {
+  "doclistId": "doclist-kind-2",
+  "documentCount": 3,
+  "filterPanel": [{"title": "Выдуманный фильтр по виду"}],
+  "name": "Высшие суды"
+ },
+ "date": {
+  "doclistId": "doclist-date-3",
+  "documentCount": 2,
+  "name": "Высшие суды, период",
+  "searchQuery": "выдуманный запрос"
+ },
+ "page": {
+  "items": [
+   {"documentId": 201, "text": "Определение Верховного Суда РФ № 1-КГ22-1-К1 по выдуманному делу", "rele": 90},
+   {"documentId": 202, "text": "Постановление Пленума ВС РФ № 5 по выдуманному вопросу", "rele": 70},
+   {"documentId": 203, "text": "Определение Конституционного Суда РФ № 2-О по другому выдуманному делу", "rele": 60}
+  ]
+ }
+}

@@ -1,0 +1,28 @@
+{
+ "_происхождение": "Синтетика, собранная по форме endpoints.json (секция search: capture, item_map). Не запись трафика «Гаранта» — все значения, включая тексты актов, выдуманы для теста.",
+ "run": {
+  "sid": "sid-001"
+ },
+ "poll": {
+  "kindTree": {
+   "doclistId": "doclist-poll-1",
+   "total": 2,
+   "children": [
+    {"text": "Судебная практика", "total": 2}
+   ],
+   "pageSize": 20
+  },
+  "name": "мой запрос"
+ },
+ "page": {
+  "items": [
+   {"documentId": 111, "text": "<b>Выдуманный акт номер один</b>", "rele": 95, "documentStatus": "ok"},
+   {"documentId": 112, "text": "Выдуманный акт номер два", "rele": 80},
+   {"documentId": 113, "text": "Выдуманный акт номер три", "rele": 60}
+  ],
+  "pageSize": 20
+ },
+ "page_пусто": {
+  "items": []
+ }
+}

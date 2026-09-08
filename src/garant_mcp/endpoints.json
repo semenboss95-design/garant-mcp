@@ -1,0 +1,247 @@
+{
+ "_комментарий": "Боевой конфиг ГАРАНТ. Составлен вручную по фактическим записям recordings/ от 20.08.2026. Поиск у Гаранта асинхронный и трёхшаговый, тела запросов form-encoded (не JSON) — поэтому описан как цепочка шагов с захватом переменных.",
+ "base_url": "https://internet.garant.ru",
+ "login_url": "https://internet.garant.ru/",
+ "rate_limit_sec": 1.5,
+ "search": {
+  "_описание": "run (получить sid) → poll (получить doclistId и дерево категорий) → list/page (забрать результаты)",
+  "steps": [
+   {
+    "name": "run",
+    "method": "POST",
+    "url": "/search/base/run",
+    "form": {
+     "query": "& BOOL(MorphoText({query}))",
+     "hash": "{hash}"
+    },
+    "capture": {
+     "sid": "sid"
+    }
+   },
+   {
+    "name": "poll",
+    "method": "POST",
+    "url": "/search/poll",
+    "form": {
+     "sid": "{sid}",
+     "hash": "{hash}"
+    },
+    "capture": {
+     "doclist_id": [
+      "kindTree.doclistId",
+      "doclistId"
+     ],
+     "total": [
+      "kindTree.total",
+      "documentCount"
+     ],
+     "kinds": [
+      "kindTree.children"
+     ],
+     "query_name": [
+      "name"
+     ],
+     "filters": [
+      "filterPanel"
+     ],
+     "page_size": [
+      "pageSize",
+      "kindTree.pageSize"
+     ]
+    },
+    "retry": {
+     "_описание": "Поиск у Гаранта асинхронный: пока индекс не готов, poll отвечает {success:false, error:'SearchInProgress'}. Опрашивать до готовности.",
+     "while_error": "SearchInProgress",
+     "max_attempts": 20,
+     "delay_sec": 1.0
+    },
+    "require": [
+     "doclist_id"
+    ]
+   },
+   {
+    "name": "page",
+    "method": "GET",
+    "url": "/list/page?hash={hash}&page={page}&id={doclist_id}&_dc={dc}",
+    "items": "items",
+    "capture": {
+     "page_size": "pageSize"
+    },
+    "require": []
+   }
+  ],
+  "item_map": {
+   "doc_id": "documentId",
+   "parent_id": "parentId",
+   "html": "text",
+   "relevance": "rele",
+   "status_code": "documentStatus"
+  }
+ },
+ "practice": {
+  "_описание": "Практика = базовый поиск + серверные фильтры. Снято с реального трафика 20.08.2026: /list/kind сужает по виду информации и отдаёт НОВЫЙ doclistId, /list/filter накладывает период и отдаёт ещё один doclistId, и уже он идёт в /list/page. Клиентский отбор по заголовкам не годится: акты кассационных судов в нефильтрованной выдаче отсутствуют вовсе.",
+  "same_as": "search",
+  "server_filter_available": true,
+  "default_kind": "Высшие суды",
+  "_приоритет": "CLAUDE.md § 7: КС РФ и ВС РФ выше 4-го КСОЮ. Вид «Высшие суды» — основной канал.",
+  "kind_step": {
+   "name": "kind",
+   "method": "POST",
+   "url": "/list/kind",
+   "form": {
+    "id": "{doclist_id}",
+    "kind": "{kind}",
+    "hash": "{hash}"
+   },
+   "capture": {
+    "doclist_id": [
+     "doclistId"
+    ],
+    "total": [
+     "documentCount"
+    ],
+    "filters": [
+     "filterPanel"
+    ],
+    "list_name": [
+     "name"
+    ]
+   },
+   "require": [
+    "doclist_id"
+   ]
+  },
+  "date_step": {
+   "name": "date",
+   "method": "POST",
+   "url": "/list/filter",
+   "form": {
+    "id": "{doclist_id}",
+    "query": "& BOOL(& Date({date_from};{date_to}))",
+    "hash": "{hash}"
+   },
+   "capture": {
+    "doclist_id": [
+     "doclistId"
+    ],
+    "total": [
+     "documentCount"
+    ],
+    "list_name": [
+     "name"
+    ],
+    "search_query": [
+     "searchQuery"
+    ]
+   },
+   "require": [
+    "doclist_id"
+   ]
+  },
+  "page_step": {
+   "name": "page",
+   "method": "GET",
+   "url": "/list/page?hash={hash}&page={page}&id={doclist_id}&_dc={dc}",
+   "items": "items"
+  }
+ },
+ "document_toc": {
+  "_описание": "Оглавление документа: разделы и статьи с идентификаторами элементов.",
+  "method": "GET",
+  "url": "/document/headline?id={doc_id}&_dc={dc}",
+  "tree": "children",
+  "node_map": {
+   "text": "text",
+   "element_id": "data.element.id",
+   "element_type": "data.element.type"
+  }
+ },
+ "document_locate": {
+  "_описание": "Номер страницы, на которой лежит элемент документа.",
+  "method": "GET",
+  "url": "/document/locate?id={doc_id}&elements={element_id}&type={element_type}&_dc={dc}",
+  "capture": {
+   "page": "page"
+  }
+ },
+ "document_pages": {
+  "_описание": "Текст страниц документа. pages — список номеров через запятую.",
+  "method": "GET",
+  "url": "/document/pages?id={doc_id}&pages={pages}&_dc={dc}",
+  "items": "items",
+  "item_map": {
+   "number": "number",
+   "html": "text"
+  }
+ },
+ "document_attributes": {
+  "method": "GET",
+  "url": "/document/attributes?id={doc_id}&is_full=false&_dc={dc}",
+  "tree": "children"
+ },
+ "revisions": {
+  "_описание": "Редакции акта: статус, изменяющие акты, период действия каждой редакции. Поле activity даёт редакцию НА ДАТУ.",
+  "method": "GET",
+  "url": "/redactions/list?id={doc_id}&_dc={dc}",
+  "items": "redactions",
+  "item_map": {
+   "edition": "text",
+   "status": "status",
+   "doc_date": "date",
+   "revision_doc_id": "documentId",
+   "changed_by": "changingDocuments.0.text",
+   "changed_by_id": "changingDocuments.0.documentId",
+   "in_force_from": "activity.0.from",
+   "in_force_to": "activity.0.to"
+  },
+  "status_map": {
+   "rs_Actual": "действующая",
+   "rs_Old": "утратила силу",
+   "rs_Future": "будущая"
+  }
+ },
+ "kinds_tree": {
+  "_описание": "Полное дерево видов информации (21 узел верхнего уровня). Нужно, чтобы узнать точное название вида — например, где лежат кассационные суды общей юрисдикции.",
+  "method": "GET",
+  "url": "/attributes/data?tree_id=!KindFull&node_id={node_id}&is_chunked=1&_dc={dc}",
+  "tree": "children",
+  "node_map": {
+   "id": "id",
+   "text": "text",
+   "leaf": "leaf"
+  }
+ },
+ "keepalive": {
+  "_описание": "Гарант держит сессию живой периодическим вызовом с фронтенда. Cookie _keepalive_ живёт единицы минут — без этого вызова подписка отваливается через считанные минуты, и приходится входить заново — командой garant login.",
+  "method": "POST",
+  "url": "/server/keepalive",
+  "form": {},
+  "interval_sec": 120
+ },
+ "daemon": {
+  "_описание": "Настройки демона. Переменная окружения перекрывает этот файл: файл приезжает всем одинаковым из репозитория, а переменная принадлежит машине — на машине, где желаемый порт занят чужой программой, иначе ничего не сделать, не правя файл, который затрёт обновление. Читает config.py.",
+  "_port": "Желаемый порт; ключ port. Умолчание живёт в config.py и здесь нарочно не повторено — двух объявлений одного умолчания не бывает, бывает расхождение. Занят — демон садится на соседний и пишет фактический в daemon_port. Env: GARANT_PORT.",
+  "keepalive_sec": 120,
+  "_keepalive_sec": "Период таймера демона: как часто он сам пингует /server/keepalive. Зажимается в 15…240 с — cookie _keepalive_ живёт единицы минут, и период больше предела тихо уронил бы подписку посреди работы. Не путать с keepalive.interval_sec выше: там троттл попутного продления внутри клиента, а не таймер. Env: GARANT_KEEPALIVE_SEC.",
+  "call_timeout_sec": 180,
+  "_call_timeout_sec": "Сколько демон ждёт ответа браузера на один вызов. Env: GARANT_CALL_TIMEOUT.",
+  "bridge": false,
+  "_cache_ttl_hours": "Срок годности записи кэша поиска в часах; ключ cache_ttl_hours. Умолчание живёт в config.py и здесь нарочно не повторено. Просроченная запись не отдаётся: за это время в базе мог появиться документ, которого в записи нет. Env: GARANT_CACHE_TTL_HOURS.",
+  "_bridge": "Файловый мост через каталог bridge/ — костыль для сред, у которых свой localhost, но общая с Windows файловая система. Обычному пользователю не нужен. Env: GARANT_BRIDGE."
+ },
+ "browser_profile": {
+  "_описание": "Здесь остались ТОЛЬКО имя каталога профиля и объяснение, почему профиль постоянный. UA, локаль, часовой пояс и размер окна переехали в <состояние>/fingerprint.json, который снимается с машины при первом входе (решение 16): отпечаток обязан совпадать между окном входа и рабочим контекстом, но не обязан быть одинаковым у всех установок. Прежние значения были сняты с машины автора, лежали в публичном файле и уезжали в каждый клон вместе с его часовым поясом.",
+  "user_data_dir": "chrome_profile",
+  "_почему_профиль": "Гарант авторизуется через OAuth (ORY_HYDRA), часть токенов живёт в sessionStorage, а storage_state.json его НЕ сохраняет — только cookie и localStorage. Поэтому перенос cookie из окна входа в рабочее окно терял авторизацию. Вместо этого используется постоянный профиль браузера на диске: и вход, и работа идут в одном профиле, сессия переживает закрытие окна ровно как в обычном Chrome. ОГРАНИЧЕНИЕ: один профиль = один процесс. Поэтому окно входа открывает сам демон (решение 15), а не отдельная программа рядом."
+ },
+ "nav_timeout_ms": 90000,
+ "document_info": {
+  "_комментарий": "Число страниц и заголовок документа. Нужен потому, что /document/pages на запрос несуществующей страницы отвечает CanNotFindData НА ВЕСЬ пакет: у одностраничного акта запрос «1,2» возвращает пустоту, и документ выглядит как отсутствующий.",
+  "method": "GET",
+  "url": "/document/info?_dc={dc}&id={doc_id}",
+  "capture": {
+   "page_count": "pageCount",
+   "title": "documentTitle"
+  }
+ }
+}
