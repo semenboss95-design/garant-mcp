@@ -130,6 +130,32 @@ def _окружение_с_чужим_домом(доп: dict, дом: Path) -> 
     return e
 
 
+def _путь_desktop_cfg(дом: Path) -> Path:
+    """Куда при домашнем каталоге `дом` попадёт `register.цель_desktop()`.
+
+    Не вызов самого `register.py`: тот читает `os.environ`/`Path.home()`
+    ПРОЦЕССА, в котором исполняется, а здесь нужен путь для ПОДПРОЦЕССА,
+    которому HOME/APPDATA переопределены `_окружение_с_чужим_домом`, — до
+    его запуска в этом процессе взять неоткуда. Ветка по ОС — буквальная
+    копия `register.py:55-65` (Windows: `APPDATA`, macOS: `Library/
+    Application Support`, иначе — `.config`), а не приближение: раньше
+    здесь везде лежал жёстко зашитый путь Windows (`AppData/Roaming`),
+    который на Linux и macOS называет не тот файл, что настоящий код
+    (`register.цель_desktop()` там уходит в `~/.config/Claude/...` и
+    `~/Library/Application Support/Claude/...` соответственно) — тест
+    сверял канарейку не в том месте, куда пишет проверяемый код, и был
+    зелёным просто потому, что оба пути одинаково не существовали.
+    `os.name`/`sys.platform` здесь — тип ОС этого процесса, а не значение
+    из окружения машины; тест и запускаемый им подпроцесс всегда работают
+    на одной ОС, так что ветка совпадает буквально.
+    """
+    if os.name == "nt":
+        return дом / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+    if sys.platform == "darwin":
+        return дом / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    return дом / ".config" / "Claude" / "claude_desktop_config.json"
+
+
 def _garant(пакет: Path, cwd: Path, аргументы: list[str],
            доп: dict | None = None, вход: str | None = None,
            timeout: int = 60) -> subprocess.CompletedProcess:
@@ -177,10 +203,15 @@ def _старая_установка(корень: Path, с_отпечатком
 
 
 ЛОК_ДЕРЖАТЕЛЬ = '''
-import msvcrt, sys, time
+import os, sys, time
 f = open(sys.argv[1], "a+b")
 f.seek(0)
-msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+if os.name == "nt":
+    import msvcrt
+    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
 print("locked", flush=True)
 time.sleep(120)
 '''
@@ -190,9 +221,13 @@ class _ДержательЗамка:
     """Настоящий процесс, держащий ТОТ ЖЕ замок, что и `daemon.занять_профиль()`.
 
     Не мок функции проверки: замок берётся ПОСТОРОННИМ процессом той же
-    системной блокировкой (`msvcrt.locking`), какой пользуется настоящий
-    демон, — `cli._профиль_занят()` в самом тесте не тронут ничем и должен
-    обнаружить занятость по-настоящему.
+    системной блокировкой, какой пользуется настоящий демон на КАЖДОЙ
+    из ОС — `msvcrt.locking` на Windows, `fcntl.flock(..., LOCK_EX|LOCK_NB)`
+    на POSIX (`daemon.py`, `занять_профиль()`, строки ~834-841: та же
+    ветка по `os.name`). Ветвление здесь не выбор удобного примитива,
+    а копия того, чем в проверяемом коде на данной ОС занят замок в
+    действительности, — `cli._профиль_занят()` (тоже ветвится по `os.name`)
+    в самом тесте не тронут ничем и должен обнаружить занятость по-настоящему.
     """
 
     def __init__(self, путь_лока: Path):
@@ -274,7 +309,7 @@ def test_uninstall_без_yes_не_трогает_ничего(tmp_path, чуж�
 
     # канарейки: конфигурация клиента с чужой записью и уже существующий
     # профиль — оба обязаны остаться байт-в-байт.
-    desktop_cfg = дом / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+    desktop_cfg = _путь_desktop_cfg(дом)
     desktop_cfg.parent.mkdir(parents=True)
     desktop_cfg.write_text(json.dumps(
         {"mcpServers": {"чужой": {"command": "foo"}}}), encoding="utf-8")
@@ -356,7 +391,7 @@ def test_uninstall_не_разрушает_чужие_записи(tmp_path, ч�
     дом = _чужой_дом(tmp_path)
     состояние = tmp_path / "состояние"
 
-    desktop_cfg = дом / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+    desktop_cfg = _путь_desktop_cfg(дом)
     desktop_cfg.parent.mkdir(parents=True)
     чужой_сервер = {"command": "foo", "args": ["--bar"]}
     desktop_cfg.write_text(json.dumps({"mcpServers": {
