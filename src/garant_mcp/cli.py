@@ -632,6 +632,21 @@ def start() -> int:
     return КОД_ОК
 
 
+def _спросить_ps(pid: int, поле: str) -> tuple[int, str, str]:
+    """`ps -p N -o stat=,<поле>=` одним вызовом: (код, состояние, поле).
+
+    Состояние спрашивается тем же вызовом, что и поле, а не отдельным: между
+    двумя вызовами процесс успевает его сменить, и ответ склеился бы из разных
+    мгновений. Исключение наружу не ловится: «процесса нет» это или «спросить
+    не удалось», решает вызывающий, и решают они по-разному.
+    """
+    p = subprocess.run(["ps", "-p", str(pid), "-o", "stat=,{}=".format(поле)],
+                       capture_output=True, text=True, timeout=20,
+                       encoding="utf-8", errors="replace")
+    состояние, _, значение = (p.stdout or "").strip().partition(" ")
+    return p.returncode, состояние, значение.strip()
+
+
 def _имя_процесса(pid: int) -> str | None:
     """Имя исполняемого файла процесса. None — процесса нет или не спросить."""
     if os.name == "nt":
@@ -647,12 +662,17 @@ def _имя_процесса(pid: int) -> str | None:
             return None
         return p.stdout.split('"')[1]
     try:
-        p = subprocess.run(["ps", "-p", str(pid), "-o", "comm="],
-                           capture_output=True, text=True, timeout=20,
-                           encoding="utf-8", errors="replace")
+        _код, состояние, имя = _спросить_ps(pid, "comm")
     except (OSError, subprocess.SubprocessError):
         return None
-    имя = (p.stdout or "").strip()
+    # Зомби для пульта — ушедший процесс: файлы он закрыл, замок профиля снял,
+    # за ним осталась одна запись в таблице с кодом выхода для родителя, и
+    # держать он ничего не может (ограничение 2). Имя своё зомби при этом
+    # печатает по-прежнему, поэтому без проверки состояния ожидание после
+    # сигнала не увидело бы ухода никогда: демона, порождённого ещё живым
+    # родителем, пульт на POSIX считал бы живым до самого потолка.
+    if состояние.startswith("Z"):
+        return None
     return имя or None
 
 
@@ -750,18 +770,22 @@ def _командная_строка(pid: int) -> tuple[str, str]:
             return "неизвестно", "командная строка процесса недоступна"
         return "есть", вывод
     try:
-        p = subprocess.run(["ps", "-p", str(pid), "-o", "args="],
-                           capture_output=True, text=True, timeout=20,
-                           encoding="utf-8", errors="replace")
+        код, состояние, строка = _спросить_ps(pid, "args")
     except (OSError, subprocess.SubprocessError) as e:
         return "неизвестно", "{}: {}".format(type(e).__name__, e)
     # Код 1 у `ps -p` означает именно «такого процесса нет» — этим он и
     # отличает отсутствие процесса от неудачи вопроса.
-    if p.returncode == 1:
+    if код == 1:
         return "нет", ""
-    if p.returncode != 0:
-        return "неизвестно", "ps вышел с кодом {}".format(p.returncode)
-    строка = (p.stdout or "").strip()
+    if код != 0:
+        return "неизвестно", "ps вышел с кодом {}".format(код)
+    # Зомби и здесь «процесса нет», и отличить его можно только состоянием:
+    # своей командной строки он уже лишён, ps печатает «[имя] <defunct>», и
+    # маркера демона там нет. Иначе молчащий путь объявил бы, что PID достался
+    # чужой программе, и снял бы daemon_port, — тогда как PID не доставался
+    # никому, а профиль зомби не держит.
+    if состояние.startswith("Z"):
+        return "нет", ""
     if not строка:
         return "неизвестно", "ps ничего не сказал о процессе"
     return "есть", строка
