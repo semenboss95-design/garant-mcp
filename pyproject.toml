@@ -1,8 +1,14 @@
-# Бекенд — setuptools: он уже есть в любом окружении, где работает pip,
-# и не тянет за собой ни одной сборочной зависимости сверх себя.
+# Бекенд — hatchling: чистый Python, в изоляции ставится одним колесом и
+# ничего не собирает сам. setuptools убран 09.09.2026: его сборка в кэше uv
+# рвётся от самого пути к кэшу — на пробеле в пути (замер ворот: обрыв на
+# самом глубоком файле самого setuptools) и на длинном пути (замер здесь:
+# «имя файла слишком длинное» при создании build\bdist), а у пользователя
+# кэш uv лежит именно под таким путём. Второе: setuptools собирает через
+# build/lib, и каталог, оставшийся от прошлой сборки, кладёт в колесо давно
+# удалённые модули — hatchling берёт файлы из src/garant_mcp.
 [build-system]
-requires = ["setuptools>=77"]  # PEP 639: поле license строкой SPDX
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.27"]  # PEP 639: поле license строкой SPDX
+build-backend = "hatchling.build"
 
 [project]
 name = "garant-mcp"
@@ -31,16 +37,16 @@ garant = "garant_mcp.cli:main"
 garant-mcp = "garant_mcp.server:main"
 garant-daemon = "garant_mcp.daemon:main"
 
-[tool.setuptools.dynamic]
+[tool.hatch.version]
 # Версия объявлена ровно в одном месте — garant_mcp/__init__.py.
-version = { attr = "garant_mcp.__version__" }
+path = "src/garant_mcp/__init__.py"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-# Без endpoints.json клиент не запускается вовсе: в нём вся карта эндпоинтов.
-garant_mcp = ["endpoints.json"]
+[tool.hatch.build.targets.wheel]
+# Раскладка src/: без этой строки hatchling ищет пакет с именем проекта
+# (garant-mcp) и не находит его. endpoints.json лежит внутри пакета и едет
+# в колесе вместе с ним — без него клиент не запускается вовсе: в нём вся
+# карта эндпоинтов.
+packages = ["src/garant_mcp"]
 
 # Набор правил назван явно, потому что CI ставит `.[dev]` — то есть ruff
 # СВЕЖИЙ, какой выйдет ко дню сборки. Без выбора он включает всё, что успело

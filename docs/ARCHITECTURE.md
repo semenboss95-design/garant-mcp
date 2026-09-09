@@ -243,7 +243,9 @@ login          вход в подписку силами демона
 status         демон, сессия, версия, каталог состояния — коротко
 doctor         полная диагностика; на каждый красный пункт — точная команда
 start · stop · restart · logs
-register · unregister      Claude Desktop и Claude Code, без абсолютных путей
+register · unregister      Claude Desktop и Claude Code, без абсолютных путей;
+                           Codex: register — только по ключу --codex, unregister
+                           снимает и Codex, если запись есть (решение 40)
 autostart on · off · status
 update         обновить пакет, перезапустить демона, doctor
 uninstall      снять всё поставленное; профиль — только с --purge

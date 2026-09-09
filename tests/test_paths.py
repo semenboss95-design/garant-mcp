@@ -83,9 +83,18 @@ THIRD_PARTY = {
 # tests/test_bridge.py буквально, и совпадение двух копий ничем не было
 # гарантировано (найдено 05.09.2026). test_bridge.py и test_config.py
 # импортируют его отсюда.
+#
+# CODEX_HOME добавлена вместе с целью Codex (`register.цель_codex()`):
+# она задаёт каталог его конфигурации напрямую, в обход Path.home(), и
+# `_окружение_с_чужим_домом` в tests/test_cli_необратимое.py её не знает —
+# подменяет только USERPROFILE/HOME/APPDATA. Не сняв её здесь, тест на
+# машине с настоящим Codex CLI читал бы и (для uninstall/unregister без
+# --codex) писал бы в НАСТОЯЩИЙ ~/.codex/config.toml этой машины, а не
+# в песочницу — ровно та же дыра, которую в своё время закрыли для
+# GARANT_HOME.
 ENV_КОНТУРА = ("GARANT_HOME", "GARANT_PY", "GARANT_PORT",
                "GARANT_KEEPALIVE_SEC", "GARANT_HEADLESS",
-               "GARANT_BRIDGE", "GARANT_CALL_TIMEOUT")
+               "GARANT_BRIDGE", "GARANT_CALL_TIMEOUT", "CODEX_HOME")
 
 
 # --------------------------------------------------------------------------

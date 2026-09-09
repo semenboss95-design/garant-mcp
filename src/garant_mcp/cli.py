@@ -64,9 +64,11 @@ from . import protocol
   start | stop | restart   процесс демона
   logs [N]                 последние N строк лога демона (по умолчанию 40)
 
-  register [--desktop] [--code] [--project ПУТЬ]
-  unregister [те же ключи] запись {"command": "garant-mcp"} у MCP-клиентов.
-                           Без ключей — Claude Desktop и Claude Code
+  register [--desktop] [--code] [--codex] [--project ПУТЬ]
+  unregister [те же ключи] запись о сервере garant-mcp у MCP-клиентов
+                           (у Claude — JSON, у Codex — таблица TOML).
+                           Без ключей — Claude Desktop и Claude Code;
+                           --codex — Codex CLI (подписка ChatGPT)
   autostart on|off|status  запуск демона при входе в систему
 
   update                   обновить пакет, перезапустить демона, doctor
@@ -434,6 +436,23 @@ def doctor(живой: bool = False) -> int:
         else:
             красных += _пункт(ПЛОХО, цель.имя, текст, paths.команда("register"))
 
+    # Codex необязателен: подписка ChatGPT есть не у всех, и «записи нет» —
+    # не поломка, а несостоявшийся выбор. Красным её называть нельзя, иначе
+    # значок перестанет значить «сломано» и там, где он заработан. Битый
+    # файл — исключение: это уже поломка, и чинить её человеку.
+    цель_codex = register.цель_codex()
+    текст = register.статус(цель_codex)
+    if текст == "зарегистрирован":
+        _пункт(ОК, цель_codex.имя, текст)
+    elif текст == register.БИТЫЙ_TOML:
+        красных += _пункт(ПЛОХО, цель_codex.имя,
+                          "{}: {}".format(текст, цель_codex.путь),
+                          "исправьте файл и повторите "
+                          + paths.команда("register", "--codex"))
+    else:
+        _пункт(НЕЙТРАЛЬНО, цель_codex.имя, "{} — необязательно: {}".format(
+            текст, paths.команда("register", "--codex")))
+
     # Зелёным называется только доказанное. «Запись есть» зелёным не
     # называется вовсе: именно так doctor показывал исправной задачу
     # прежнего установщика, которая вела в исчезнувший каталог и падала
@@ -795,33 +814,67 @@ def login(готово: bool = False) -> int:
 
 
 # --- регистрация -----------------------------------------------------------
-def _цели(аргументы: list[str]) -> tuple[list, int]:
-    """Разбор ключей --desktop/--code/--project. Без ключей — оба клиента."""
+def _цели(аргументы: list[str], снять: bool = False) -> tuple[list, int]:
+    """Разбор ключей --desktop/--code/--codex/--project. Без ключей — оба
+    клиента Claude, а Codex — только по ключу либо когда с него снимают."""
     from . import register
 
     цели = []
-    desktop = "--desktop" in аргументы
-    code = "--code" in аргументы
-    if "--project" in аргументы:
-        i = аргументы.index("--project")
-        if i + 1 >= len(аргументы):
-            print("{} после --project нужен путь к каталогу проекта".format(ПЛОХО),
-                  file=sys.stderr)
+    desktop = code = codex = False
+    проект = None
+    i = 0
+    while i < len(аргументы):
+        арг = аргументы[i]
+        if арг == "--desktop":
+            desktop = True
+        elif арг == "--code":
+            code = True
+        elif арг == "--codex":
+            codex = True
+        elif арг == "--project":
+            if i + 1 >= len(аргументы):
+                print("{} после --project нужен путь к каталогу проекта".format(ПЛОХО),
+                      file=sys.stderr)
+                return [], КОД_УПОТРЕБЛЕНИЕ
+            проект = аргументы[i + 1]
+            i += 1
+        else:
+            # Неизвестное не пропускаем: с появлением --codex опечатка в ключе
+            # стала правдоподобной, а прежний разбор смотрел только на «есть ли
+            # знакомое», и `--codexx` тихо регистрировал Claude Desktop и Claude
+            # Code с нулевым кодом — человек читал «готово» о клиенте, о котором
+            # не просил, и не узнавал, что в Codex не записан.
+            print("{} {} «{}»; ключи: --desktop --code --codex --project ПУТЬ"
+                  .format(ПЛОХО,
+                          "неизвестный ключ" if арг.startswith("-")
+                          else "лишний аргумент", арг), file=sys.stderr)
             return [], КОД_УПОТРЕБЛЕНИЕ
-        цели.append(register.цель_проекта(аргументы[i + 1]))
+        i += 1
+    if проект is not None:
+        цели.append(register.цель_проекта(проект))
     if desktop:
         цели.append(register.цель_desktop())
     if code:
         цели.append(register.цель_code())
+    if codex:
+        цели.append(register.цель_codex())
     if not цели:
         цели = [register.цель_desktop(), register.цель_code()]
+        # Codex ставится по желанию, и без ключа мы его не регистрируем:
+        # иначе `garant setup` записал бы человека к клиенту, о котором он
+        # не просил. Снятие — наоборот: запись наша, где бы она ни лежала,
+        # и оставить её значит оставить клиенту ссылку на снятый сервер.
+        # Не зарегистрированного Codex при этом не поминаем вовсе — строка
+        # про клиента, которого на машине нет, в отчёте лишняя.
+        if снять and register.статус(register.цель_codex()) == "зарегистрирован":
+            цели.append(register.цель_codex())
     return цели, КОД_ОК
 
 
 def register_cmd(аргументы: list[str], снять: bool = False) -> int:
     from . import register
 
-    цели, код = _цели(аргументы)
+    цели, код = _цели(аргументы, снять=снять)
     if код != КОД_ОК:
         return код
     неудач = 0
@@ -1129,8 +1182,14 @@ def uninstall(purge: bool = False, без_вопросов: bool = False) -> int
     from . import register
 
     print("{0}{0}{0} СНЯТИЕ garant-mcp {0}{0}{0}\n".format(РАМКА))
-    print("Будет снято: регистрация у Claude Desktop и Claude Code, "
-          "автозапуск; демон остановлен.")
+    # Список считается ДО вопроса: человек соглашается на то, что ему назвали.
+    # Codex попадает в него, только если наша запись у него есть, — снимать
+    # её надо (это наша запись), а называть клиента, которого нет, незачем.
+    цели_записей = [register.цель_desktop(), register.цель_code()]
+    if register.статус(register.цель_codex()) == "зарегистрирован":
+        цели_записей.append(register.цель_codex())
+    print("Будет снято: регистрация у {}, автозапуск; демон остановлен."
+          .format(", ".join(ц.имя for ц in цели_записей)))
     print("Профиль подписки ({}): {}".format(
         paths.profile_dir,
         "БУДЕТ УДАЛЁН — вход придётся выполнить заново" if purge
@@ -1146,7 +1205,7 @@ def uninstall(purge: bool = False, без_вопросов: bool = False) -> int
     неудач += 1 if stop() != КОД_ОК else 0
 
     print("\n2/4 регистрация у MCP-клиентов")
-    for цель in (register.цель_desktop(), register.цель_code()):
+    for цель in цели_записей:
         ок, текст = register.снять(цель)
         _печать(ОК if ок else ПЛОХО, текст)
         неудач += 0 if ок else 1

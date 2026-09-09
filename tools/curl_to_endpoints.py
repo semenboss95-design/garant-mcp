@@ -12,7 +12,6 @@
 и заполнить response_map по фактическому JSON-ответу.
 """
 import json
-import re
 import shlex
 import sys
 from urllib.parse import urlparse
