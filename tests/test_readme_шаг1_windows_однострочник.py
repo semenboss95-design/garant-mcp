@@ -57,7 +57,9 @@ README = ROOT / "README.md"
 def _windows_step1_command() -> str:
     """Команда шага 1 для Windows — взята ИЗ README.md, не переписана руками."""
     текст = README.read_text(encoding="utf-8")
-    маркер = "**Windows.**"
+    # Форма README — «**Windows** — …»: маркер без точки, чтобы тест не
+    # диктовал пунктуацию, а брал первый жирный «Windows» и блок за ним.
+    маркер = "**Windows**"
     поз = текст.index(маркер)
     начало_ограды = текст.index("```", поз)
     начало_блока = текст.index("\n", начало_ограды) + 1
