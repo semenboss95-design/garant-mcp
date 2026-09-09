@@ -61,8 +61,15 @@ Claude Desktop, Claude Code и `.mcp.json` конкретного проекта
 и вставьте эту строку целиком:
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/semenboss95-design/garant-mcp/main/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/semenboss95-design/garant-mcp/main/install.ps1).TrimStart([char]0xFEFF)))"
 ```
+
+Строка длиннее обычной не для красоты. Установщик написан по-русски и хранится
+с меткой кодировки в начале файла — без неё Windows PowerShell прочитал бы
+русский текст как мусор; но при загрузке из сети он эту метку не отбрасывает
+и спотыкается о неё раньше, чем возьмётся за установку. Срезает её кусок
+`TrimStart` в середине команды: без него не устанавливается ничего вовсе
+(проверено 09.09.2026). Копируйте строку целиком, со всеми скобками.
 
 **macOS и Linux.** Откройте Терминал (на macOS — Cmd+Пробел, набрать
 «Терминал», Enter) и вставьте эту строку; файл `install.sh` скачается
@@ -225,9 +232,9 @@ garant login
 установки не будет, и это не поломка, а именно то, о чём просили ключом.
 Довести до рабочего состояния — `garant setup`, а следом `garant login`.
 
-Ключи передаются файлу установщика, поэтому однострочник из шага 1 для них
-не годится: там файл скачивается и исполняется на лету, вставить ключ негде.
-Скачайте его отдельно и запустите руками:
+Ключи передаются файлу установщика, а команда из шага 1 исполняет его
+содержимое на лету, не сохраняя файла. Проверенный способ передать ключи
+один — скачать файл и запустить его:
 
 ```
 irm https://raw.githubusercontent.com/semenboss95-design/garant-mcp/main/install.ps1 -OutFile install.ps1

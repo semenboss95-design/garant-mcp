@@ -123,7 +123,7 @@ garant unregister
 **Команды** — ровно те, что в README, и ничего сверх них:
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/semenboss95-design/garant-mcp/main/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/semenboss95-design/garant-mcp/main/install.ps1).TrimStart([char]0xFEFF)))"
 ```
 
 на macOS и Linux:
